@@ -1,0 +1,308 @@
+---
+title: "Generalized Multilevel Models"
+output: learnr::tutorial
+runtime: shiny_prerendered
+---
+
+```{r setup, include=FALSE}
+library(learnr)
+knitr::opts_chunk$set()
+library(lme4)
+library(ggplot2)
+library(rstanarm)
+library(tidyverse)
+library(bayesplot)
+library(gridExtra)
+library(arm)
+```
+
+
+## Overview
+
+So far, we've separately explored Generalized Linear Models and Linear Mixed Effects Models. Today, we'll be exploring Generalized Linear Mixed Effects Models, which bridge the two ideas together.
+
+- We'll be connecting our $X\beta$ equation and outcome to a probability distribution with a link function. 
+- We'll also incorporate random effects to consider the differences between groups.
+
+This is nice because it's joining two concepts we've covered already, but less nice because those concepts may still be sinking in. 
+
+One thing I found is that these models do make a lot more sense in practice rather than by concepts, so today, I'll be doing that!
+
+In this discussion, we'll be going over two experiments to demonstrate Generalized Linear Mixed Models:
+
+- Coral Predation
+- Turtles and Diseases
+
+## Binomial GLMM with Coral Predation
+
+Source: McKeon, C. S., Stier, A., McIlroy, S., & Bolker, B. (2012). Multiple defender effects: Synergistic coral defense by mutualist crustaceans. Oecologia, 169(4), 1095–1103. http://doi.org/10.1007/s00442-012-2275-2
+
+
+Coral ecosystems are very complicated and have many small, nuanced interactions between organisms. Many of these organisms end up developing mutually beneficial relationships. One of these includes certain species of shrimp and crab that defend coral colonies from predators, like starfish.
+
+This study is investigating this relationship, and is trying to quantify the effect of these crustaceans as "defenders". The way they did it is as follows:
+
+- They put predatorial starfish in ten separated blocks.
+- In each block, they put in a piece of coral. They then put in a "treatment": nothing, shrimps, crabs, or both shrimp and crab.
+- They waited a certain period of time and checked to observe if the starfish ate the coral
+- They repeated this until they had two of each treatment done in each block.
+
+Experimental Question: How does each treatment impact whether or not the starfish will eat the coral?
+
+Let's start by looking at the data:
+
+```{r}
+load("culcita.RData")
+head(culcita_dat)
+```
+
+There are three variables:
+
+- *block* reflects which block the data was taken from (1 to 10)
+- *predation* is an indicator variable, 1 or 0, showing whether or not eating happened.
+- *ttt* is a factor corresponding to the treatment.
+
+Let's visualize this! Let's plot the proportion of times predation happened under each sample!
+
+```{r}
+culcita_dat %>% group_by(ttt) %>% 
+  summarize(mean=mean(predation),lower=mean(predation)-sd(predation),upper=mean(predation)+sd(predation)) %>% ungroup() %>%
+  ggplot() + geom_point(aes(x=ttt,y=mean,color=ttt),size=4) +
+#  geom_errorbar(aes(x=ttt,ymin=lower,ymax=upper,color=ttt),width=0,size=2) + 
+  theme_bw() + xlab("Treatment") + ylab("Predation") + ggtitle("Predation per Treatment") + 
+  coord_cartesian(ylim=c(0,1)) + theme(legend.position="none")
+```
+
+From this, it seems that adding crabs or shrimp decreases the amount of predation happening. However, is this the whole story?
+
+Let's look closer and see how predation differs across blocks AND treatments!
+
+```{r}
+culcita_dat %>% group_by(block,ttt) %>% 
+  summarize(mean=mean(predation)) %>% ungroup() %>%
+  ggplot() + geom_point(aes(x=block,y=mean,color=block),size=4) + 
+  theme_bw() + xlab("Block") + ylab("Predation") + ggtitle("Predation per Treatment and Block") + facet_wrap(~ ttt)
+```
+
+This plot shows the average number of times (out of two samples :<) predation occurred, separated by block and treatment. What we can see is that some of the starfish stopped eating when treatment was introduced, but a lot of others were pretty much indifferent!
+
+So how do we approach this? Well, our outcome is binary (0 or 1), so logistic regression should be a good approach. But, we also want to consider the differences between blocks. This is a great time to try using our generalized multilevel models!
+
+### Modeling Logistic GLMM in R
+
+To model GLMM's, we can use *glmer()* or *stan_glmer()*. We write it out the same ways as before, but also include our random effects. In this case, for our model:
+
+- *predation* is the outcome.
+- *ttt* is the predictor.
+- *block* is our random effect.
+
+We can write out and carry our model as shown below:
+
+Be warned: this example uses relatively little data. As you start getting more data and more complicated models, stan_glmer may start taking a LONG time. In these situations, try removing "refresh=0" from the model when you first run it (don't run it for documents), and see how long it takes. If it takes too long, use *glmer* instead. 
+
+```{r}
+glmercoral = stan_glmer(predation~ttt+(1|block),data=culcita_dat,family=binomial(link="logit"),refresh=0)
+#glmercoral = glmer(predation~ttt+(1|block),data=culcita_dat,family=binomial(link="logit"))
+
+print(glmercoral)
+```
+
+In our outcome, we can see our fixed effects for our treatment. However, how can we assess what our random effects are? 
+
+There are two ways:
+
+- *fixef()* and *ranef()* show the model's fixed effects and random effects. It's the LME equivalent of *coef()*! However, this doesn't let us see the uncertainty of our model.
+- If we're using STAN, we can estimate them directly from our model's simulated estimates. This lets us visualize the uncertainty too.
+
+```{r}
+#Draw out the model's simulated estimates for fixed and random effects
+sims= as.matrix(glmercoral) 
+
+#Clean up the column names (just to make them pretty! You can also do this in the next step)
+for(i in 1:length(unique(culcita_dat$block))) {
+  colnames(sims)[i+4] = paste("block",i,sep="")
+}
+colnames(sims)[15] = "sigma"
+
+head(sims)
+```
+
+```{r}
+#Make a data frame to put in coefficients
+coefdisplay = data.frame(names=rep(NA,ncol(sims)),med=rep(NA,ncol(sims)),upper=rep(NA,ncol(sims)),lower=rep(NA,ncol(sims)))
+
+#Use for loops to draw out estimates and names for each variable
+for(i in 1:ncol(sims)){
+  coefdisplay$names[i] = colnames(sims)[i]
+  coefdisplay$med[i] = median(sims[,i])
+  coefdisplay$upper[i] = median(sims[,i]) + 2*mad(sims[,i])
+  coefdisplay$lower[i] = median(sims[,i]) - 2*mad(sims[,i])
+}
+
+coefdisplay
+```
+
+```{r}
+p1 = ggplot(coefdisplay[1:4,]) + aes(x=names,y=med) + geom_point() + geom_errorbar(aes(ymin=lower,ymax=upper),width=0) + ggtitle("Fixed Effects") + ylab("Estimate") + xlab("Variables") + theme_bw() + geom_hline(aes(yintercept=0),linetype="dashed")
+
+p2 = ggplot(coefdisplay[5:14,]) + aes(x=names,y=med) + geom_point() + geom_errorbar(aes(ymin=lower,ymax=upper),width=0) + ggtitle("Random Effects") + ylab("Estimate") + xlab("Groups") + theme_bw() + geom_hline(aes(yintercept=0),linetype="dashed")
+
+grid.arrange(p1,p2)
+```
+
+### Model Assessment and Predictions
+
+We can do all the things we did before to check our models!
+
+```{r}
+coralpred = posterior_predict(glmercoral,iter=1000)
+ppc_dens_overlay(coralpred[1:100,], y=culcita_dat$predation)
+```
+
+You can also make predictions! With glmer() without stan, you can use *predict()* like with other models. For now, since this is a stan model, we'll make predictions using posterior_predict()!
+
+```{r}
+newdata=data.frame(block=c(sample(c(1:10),size=3,replace=T),11),ttt=sample(unique(culcita_dat$ttt),size=4,replace=T))
+newdata
+```
+
+Here, we're going to make predictions for three known blocks, and 1 new block. But wait... the new group doesn't have a random effect. What's it going to do?
+
+With linear mixed models, predictions for new groups will use the average for the data to make its approximation.
+
+This is one of the advantages of generalized linear mixed models. When you make predictions for a new group, it will incorporate the estimated group effects, and all new estimates will be made for the overall group average.
+
+These posterior predictions will predict the classes for each sample. We can use mean() to see how often each one gets classified as 1!
+
+```{r}
+newpred = posterior_predict(glmercoral,newdata=newdata,draws=1000)
+c(mean(newpred[,1]),mean(newpred[,2]),mean(newpred[,3]),mean(newpred[,4]))
+```
+
+On average this is how often each one is eaten via posterior prediction! We can also use posterior_epred for it to sample probabilities directly from the regression equation:
+
+```{r}
+newpred = posterior_epred(glmercoral,newdata=newdata,draws=1000)
+c(mean(newpred[,1]),mean(newpred[,2]),mean(newpred[,3]),mean(newpred[,4]))
+```
+
+### Side Note: Saving Models
+
+If you use stan_glmer, you can get into a lot of situations where you run a big model, and don't want to save it again. I won't run this code, but you can use saveRDS() to save your model, and use readRDS() to read it back in later.
+
+```{r}
+#saveRDS(modelgdat,"stanmodel.rds")
+#modelgdat <- readRDS("stanmodel.rds)
+```
+
+This lets you save and read in big stan models without having to rerun the whole model each time you run the code! You shouldn't need to do this for HW or most things. If it takes ridiculously long to run, switch to glmer() instead of stan_glmer(). But, there may come times where you need to run big stan models on large datasets, and that's when this is helpful!
+
+## Poisson GLMM with Turtle Shells
+
+Source: Ozgul, A., Oli, M. K., Bolker, B. M., & Perez-Heydrich, C. (2009). Upper respiratory tract disease, force of infection, and effects on survival of gopher tortoises. Ecological Applications, 19(3), 786–798. Retrieved from http://www.ncbi.nlm.nih.gov/pubmed/19425439
+
+Despite the file name, this dataset is not actually about gophers, it's about gopher turtles.
+
+This dataset is from a study investigating gopher turtles, specifically areas where gopher turtles were dying from various diseases.
+
+Over three years, scientists returned to certain sites where the turtles stayed, took measurements on the population to track how many were diseased, and also counted the number of shells to approximate how many may be dying.
+
+What we'll be trying to look at is if year and saloprevalence affect the number of shells at each beach.
+
+```{r}
+load("gopherdat2.RData")
+Gdat$yearf = as.factor(Gdat$year)
+head(Gdat)
+```
+
+We have the following variables:
+
+- *Site* is the turtle site, with a code name.
+- *year* is the year.
+- *shells* is the counted nubmer of shells in the site.
+- *type* is the water type. As far as I can tell, all of these are freshwater.
+- *Area* is the area of the site. I don't know what the units are.
+- *density* I am not sure, but I think it reflects the population density, or how many turtles are in the area.
+- *prev* is the saloprevalence, or the percentage of turtles that have the disease.
+
+Looking over these variables, what's clear is that shells is count data over a space, which fits a poisson distribution. However, we also need to keep in mind that these Sites would have a lot of differences, which may also affect the counts. So, we need to consider the effect of each Site as well. This makes this a good example to try a Poisson Multilevel Model.
+
+- *shells* will be our outcome.
+- *prev* and *year* will be our responses.
+- *Site* will be our random effect.
+
+```{r}
+glmershell = stan_glmer(shells~prev + yearf + (1|Site),family=poisson(link="log"),data=Gdat,refresh=0)
+glmershell
+```
+
+```{r}
+postpred= posterior_predict(glmershell,draws=1000)
+ppc_dens_overlay(postpred[1:100,],y=Gdat$shells)
+```
+
+```{r}
+plot(fitted(glmershell),resid(glmershell))
+```
+
+Looking at residuals can be weird, but also useful! With GLMER, we can use ggplot() to make our same residual plots, but include more information to really see what's going wrong!
+
+```{r}
+ggplot() + aes(x=fitted(glmershell),y=resid(glmershell),color=Gdat$Site, label=Gdat$Site) + geom_text() + theme_bw() + theme(legend.position="none")
+```
+
+### Predicting Data outside of RStan
+
+I also wanted to quickly show how to do prediction without RStan! This will be useful, especially when working with bigger datasets.
+
+```{r}
+modelgdat = glmer(shells~prev+ yearf + (1|Site),family=poisson(link="log"),data=Gdat)
+summary(modelgdat)
+```
+
+Let's first take a quick look at our models' coefficients:
+
+```{r}
+fixef(modelgdat)
+```
+
+```{r}
+ranef(modelgdat)
+```
+
+We can make predictions using the *predict()* function:
+
+```{r}
+newdata = data.frame(yearf=as.factor(2004:2006),prev=c(10,20,30),Area=1,Site=sample(unique(Gdat$Site),3))
+predict(modelgdat,newdata=newdata, type="response")
+```
+
+This works if you have no new groups. If you do have a new group, you need to include "allow.new.levels=T" in predict():
+
+```{r}
+newdata = data.frame(yearf=as.factor(2004:2006),prev=c(10,20,30),Area=1,Site=c(sample(unique(Gdat$Site),2),"NEW"))
+predict(modelgdat,newdata=newdata, type="response",allow.new.levels=T)
+```
+
+The rules are slightly different if you are using binomial models, but prediction should be like this!
+
+### One last sidenote: Offsets
+
+Some of you probably noticed something odd about this, which is *Area*. Since *shells* is count over a unit space, having more space can lead to counting more shells. So, we should try to incorporate *Area* into our model to compensate for this!
+
+The way we usually do this is by including an offset term. For any poisson distributions, you are doing counts, but it's usually counts per unit time, space, etc. As a rule of thumb offset usually is for the "per unit stuff", but there are other are other places where it can be used!
+
+However, if we incorporate it into the model:
+
+```{r}
+glmershell2 = stan_glmer(shells~prev + yearf + offset(log(Area)) + (1|Site),family=poisson(link="log"),data=Gdat,refresh=0)
+pp_check(glmershell2)
+```
+
+We can see here that it doesn't capture the data at all. That's why I didn't include it in the main models!
+
+## Additional Stuff
+
+There are a lot of details with GLMM's, and a lot of technical things we all will end up running into that we can't cover here! But, to address a lot of questions, there's this FAQ you can refer to while you do your work!
+
+http://bbolker.github.io/mixedmodels-misc/glmmFAQ.html

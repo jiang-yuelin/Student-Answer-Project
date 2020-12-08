@@ -1,0 +1,42 @@
+---
+title: "678 Project: Student Answer Correctness Prediction"
+author: "Yuelin Jiang"
+date: "12/7/2020"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(rstanarm)
+library(lme4)
+library(ggplot2)
+library(arm)
+
+```
+
+## EDA
+
+
+
+```{r cars}
+
+
+```
+
+## Modelling 
+
+
+
+```{r pressure, echo=FALSE}
+train <- read.csv('train_sample.csv')
+colnames(train)
+
+```
+
+```{r}
+complete_pooling <- glm(answered_correctly ~ timestamp +  )
+
+
+```
+
