@@ -57,7 +57,7 @@ top$content_id<- as.factor(top$content_id)
 # make cuts of continuous variables
 top$action_cut <- cut(top$action_count, breaks = c(0, 7000, 15000))
 # class(top$action_cut)
-top$month_cut <- cut(top$time, breaks = c(0, 3, 6, 12, 100))
+top$month_cut <- cut(top$time, breaks = c(0, 6, 12, 100))
 top$std_cut <- cut(top$std_accu, breaks = c(0, 0.5, 0.75, 1))
 top$q_accu_cut <- cut(top$accu_q, breaks = c(0, 0.5, 0.75, 1))
 
