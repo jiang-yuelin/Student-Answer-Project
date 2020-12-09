@@ -52,22 +52,22 @@ top$user_id <- as.factor(top$user_id)
 top$part <- as.factor(top$part)
 top$prior_explain <- as.factor(top$prior_explain)
 top$content_id<- as.factor(top$content_id)
-is.factor(top$content_id)
+# is.factor(top$content_id)
 
 # make cuts of continuous variables
 top$action_cut <- cut(top$action_count, breaks = c(0, 7000, 15000))
 # class(top$action_cut)
-top$month_cut <- cut(top$time, breaks = c(0, 6, 12, 100))
+top$month_cut <- cut(top$time, breaks = c(0, 3, 6, 12, 100))
 top$std_cut <- cut(top$std_accu, breaks = c(0, 0.5, 0.75, 1))
 top$q_accu_cut <- cut(top$accu_q, breaks = c(0, 0.5, 0.75, 1))
 
-class(top$std_cut)
+# class(top$std_cut)
 ```
 
 ```{r}
 # basic log model
 options(scipen=999)
-complete_pooling <- glm(asw_correct ~ factor(user_id) + factor(content_id)+
+complete_pooling <- glm(asw_correct ~ factor(user_id) +
                           month_cut + 
                           q_accu_cut +
                           prior_explain + part, 
@@ -77,20 +77,22 @@ summary(complete_pooling)
 ```
 
 ```{r}
-# add user_id and content_id as random effects, varying intercepts
-user_pooled1 <- glmer(asw_correct ~ (1|user_id) + (1|content_id) +
+# add user_id as random effects, varying intercepts
+user_pooled1 <- glmer(asw_correct ~ (1|user_id) + 
                         part + prior_explain +
                         month_cut + q_accu_cut, 
                       family = binomial, data = top)
 summary(user_pooled1)
 ```
+
+
 ```{r}
 # add content_id as random effect
-user_pooled1 <- glmer(asw_correct ~ (1|user_id) +
+user_pooled2 <- glmer(asw_correct ~ (1|user_id) + (1|content_id) +
                         part + prior_explain +
                         month_cut + q_accu_cut, 
                       family = binomial, data = top)
-summary(user_pooled1)
+summary(user_pooled2)
 ```
 
 
@@ -100,14 +102,16 @@ user_stanpooled1 <- stan_glmer(asw_correct ~ (1|user_id) +
                              month_cut + q_accu_cut, 
                            family = binomial, data = top)
 summary(user_stanpooled1)
+# added content_id as a multilevel
+# user_stanpooled2 <- stan_glmer(asw_correct ~ (1|user_id) + (1|content_id)+
+#                              part + prior_explain +
+#                              month_cut + q_accu_cut, 
+#                            family = binomial, data = top)
+# summary(user_stanpooled2)
 ```
 
+## Model check
 ```{r}
-# added content as a multilevel
-user_stanpooled2 <- stan_glmer(asw_correct ~ (1|user_id) + (1|content_id)+
-                             part + prior_explain +
-                             month_cut + q_accu_cut, 
-                           family = binomial, data = top)
-summary(user_stanpooled2)
+
 ```
 

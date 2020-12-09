@@ -1,0 +1,32 @@
+---
+title: "Student Answer Correctness Prediction Project"
+subtitle: "MA678 Midterm Project"
+author: "Yuelin Jiang"
+date: "12/9/2020"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+```
+
+## Abstract
+
+
+
+## Introduction
+
+You can also embed plots, for example:
+
+
+
+## Method
+
+
+## Result
+
+## Discussion
+
+
+# Appendix
