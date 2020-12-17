@@ -12,6 +12,7 @@ library(rstanarm)
 library(lme4)
 library(ggplot2)
 library(arm)
+library(performance)
 
 ```
 
@@ -67,10 +68,7 @@ top$q_accu_cut <- cut(top$accu_q, breaks = c(0, 0.5, 0.75, 1))
 ```{r}
 # basic log model
 options(scipen=999)
-complete_pooling <- glm(asw_correct ~ factor(user_id) +
-                          month_cut + 
-                          q_accu_cut +
-                          prior_explain + part, 
+complete_pooling <- glm(asw_correct ~ month_cut + q_accu_cut + prior_explain + part, 
                         family = binomial, data = top)
 
 summary(complete_pooling)
@@ -88,8 +86,8 @@ summary(user_pooled1)
 
 ```{r}
 # add content_id as random effect
-user_pooled2 <- glmer(asw_correct ~ (1|user_id) + (1|content_id) +
-                        part + prior_explain +
+user_pooled2 <- glmer(asw_correct ~ (1|user_id)+(1|part) 
+                        + prior_explain +
                         month_cut + q_accu_cut, 
                       family = binomial, data = top)
 summary(user_pooled2)
@@ -101,7 +99,7 @@ user_stanpooled1 <- stan_glmer(asw_correct ~ (1|user_id) +
                              part + prior_explain +
                              month_cut + q_accu_cut, 
                            family = binomial, data = top)
-summary(user_stanpooled1)
+summary(user_stanpooled1, digits =4)
 # added content_id as a multilevel
 # user_stanpooled2 <- stan_glmer(asw_correct ~ (1|user_id) + (1|content_id)+
 #                              part + prior_explain +
@@ -112,6 +110,43 @@ summary(user_stanpooled1)
 
 ## Model check
 ```{r}
+# residual check stan
+plot(fitted(user_stanpooled1),resid(user_stanpooled1),pch=20, ylim = c(-2,2)) 
+curve(sqrt(x),add=T)
+title("Reisdual Plot of stan_glmer")
+ylab("Observed - Estimated")
+xlab("Estimated Values")
 
+# check glmer
+plot(fitted(user_pooled1),resid(user_pooled2),pch=20, ylim = c(-2,2)) 
+curve(sqrt(x),add=T)
+
+# bin residual
+binnedplot(fitted(complete_pooling), resid(complete_pooling) )
+binnedplot(fitted(user_pooled1), resid(user_pooled1) )
+binnedplot(fitted(user_pooled2), resid(user_pooled2))
+binnedplot(fitted(user_stanpooled1), resid(user_stanpooled1), main = "Binned Residual Plot of stan_glmer" )
+
+
+```
+
+```{r}
+# posterior predict of stan_glmer
+pp_check(user_stanpooled1)
+class(user_stanpooled1)
+
+pp_check(user_pooled1)
+
+post.fit = posterior_predict(user_stanpooled1)
+ppc_dens_overlay(y, post.fit)
+```
+
+```{r}
+coefs <- data.frame(summary(user_stanpooled1)$coefficients)
+  
+output %>%
+  kbl() %>%
+  kable_classic(full_width = F, html_font = "Cambria") %>%
+  footnote(general = "The table above is the summary output of the glmmTMB model.",              general_title = "Table 2: ")
 ```
 

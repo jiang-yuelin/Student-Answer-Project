@@ -17,16 +17,49 @@ library(tidyverse)
 
 ## Introduction
 
-You can also embed plots, for example:
+As CoViD-19 pandemic hits most parts of the world, it is radically changing many aspect of our lives, including teaching and learning. More and more education is happening online. This is a new opportunity to trace and optimize how knowledge is passed to students. If online education platforms can correctly assess and adjust to the learning experience for each student, then it's possible that any student with an internet connection can enjoy the benefits of a personalized learning experience! 
 
+The goal of this project is to trace student's knowledge overtime, specifically to predict how students will perform on the next question posed to them. Data for this project is supplied by Riid! Kaggle Competition (https://www.kaggle.com/c/riiid-test-answer-prediction/data). It consists of a total of one million actions taken by 3823 students on an online education platform. 
 
 
 ## Method
 
+### Data Selection
+For the sake of applying the appropriate multilevel models in this project, my first step is to subset this huge dataset. I decided to only model for the top 15 students with the most actions taken. The distribution of Top 15 action counts is shown below. The 15 of them have a total of 99,910 actions of answering quesitons.
+
+[insert top 15 plot]
+
+[insert correctness rate]
+[insert time distribution]
+[insert correct vs. content_id accu]
+
+### Choosing the Right Model 
+
+Since the target variable asw_correct is binary, I started with a basic logistic model. 
+Formula 1:
+$asw\_correct \sim month\_cut + q\_accu\_cut + prior\_explain + part $
+The predictor variables are, 
+month_cut: student's total study time in months, a factor variable cut at three levels of (0,6,12,100);
+q_accu_cut: each question's overal accuracy, a factor variable cut at three levels of (0, 0.5, 0.75, 1);
+prior_explain: a binary variable, = 1 when the prior question has explainations; 
+part: which part does this question belong to, a factor variable of 7 levels.
+
+The result is interesting and showing some significance(see Appendix), however a simple logistic model assumes that all actions are independent from each other, and disregards that actions taken by the same student might have some correlation with each other. 
+
+So I proceed to use generalized multilevel model with binomial distribution. Our data fits into the repeated measurements scenario of multilevel modeling, where the data tracks each student's answer correctness overtime. So I use each student as a level to allow varying intercept. 
+
+Formula 2:
+$asw\_correct \sim (1 |user\_id)+  month\_cut + q\_accu\_cut + prior\_explain + part $
+
 
 ## Result
 
+The multilevel model showed significantly better results than the null logistic model.
+
 ## Discussion
+
+### Large Data and Python
+
 
 
 # Appendix
